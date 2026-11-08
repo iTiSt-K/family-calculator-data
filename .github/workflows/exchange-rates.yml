@@ -25,17 +25,26 @@ jobs:
       - name: 환율 받기
         env:
           KOREAEXIM_API_KEY: ${{ secrets.KOREAEXIM_API_KEY }}
+          RATES_SIGNING_KEY: ${{ secrets.RATES_SIGNING_KEY }}
         run: python3 scripts/fetch_rates.py
 
       - name: 바뀌었으면 커밋
+        id: commit
         run: |
           # Stage first: a brand-new file is invisible to plain `git diff`.
-          git add exchange/
+          git add -A exchange/
           if git diff --cached --quiet; then
             echo "변경 없음"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "환율 갱신: $(python3 -c 'import json;print(json.load(open("exchange/rates.json"))["noticeDate"])') 고시"
+          git commit -m "환율 갱신"
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: 예비 경로(jsDelivr) 캐시 갱신
+        if: steps.commit.outputs.changed == 'true'
+        # 실패해도 잡은 성공 — 예비 경로가 잠시 늦을 뿐이고, 앱은 더 오래된 고시를 받아도 저장본을 유지한다.
+        continue-on-error: true
+        run: curl -fsS -m 30 "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@main/exchange/rates.dat"
