@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -47,22 +48,37 @@ def fetch(key: str, day: datetime) -> list[dict]:
     return items
 
 
+# 앱이 받아들이는 형식과 같다(앱도 같은 규칙으로 검사해, 어긋나면 파일 전체를 버린다).
+# 이상한 값을 게시해 모든 사용자의 갱신을 막기보다, 여기서 실패해 이전 파일을 유지한다.
+CODE_RE = re.compile(r"^[A-Z]{3}$")
+KRW_RE = re.compile(r"^\d{1,9}(\.\d{1,6})?$")
+UNIT_RE = re.compile(r"^\d{1,5}$")
+MAX_NAME = 40
+
+
 def parse(items: list[dict]) -> list[dict]:
     rates = []
     for item in items:
-        raw_unit = item.get("cur_unit", "")  # "USD", "JPY(100)"
+        raw_unit = str(item.get("cur_unit") or "")  # "USD", "JPY(100)"
         code, _, rest = raw_unit.partition("(")
         code = code.strip()
-        unit = int(rest.rstrip(")")) if rest else 1
-        base = (item.get("deal_bas_r") or "").replace(",", "").strip()
+        base = str(item.get("deal_bas_r") or "").replace(",", "").strip()
         if not code or code == "KRW" or not base:
             continue
-        rates.append({
-            "code": code,
-            "name": (item.get("cur_nm") or code).strip(),
-            "unit": unit,
-            "krw": base,
-        })
+        unit_text = rest.rstrip(")").strip() if rest else "1"
+        name = str(item.get("cur_nm") or code).strip()
+        if (
+            not CODE_RE.match(code)
+            or not KRW_RE.match(base)
+            or float(base) <= 0
+            or not UNIT_RE.match(unit_text)
+            or not 1 <= int(unit_text) <= 10000
+            or len(name) > MAX_NAME
+        ):
+            raise SystemExit(f"예상과 다른 환율 항목이라 게시하지 않습니다: {raw_unit!r} {base!r}")
+        rates.append({"code": code, "name": name, "unit": int(unit_text), "krw": base})
+    if len({r["code"] for r in rates}) != len(rates):
+        raise SystemExit("통화 코드가 중복돼 게시하지 않습니다.")
     return rates
 
 
