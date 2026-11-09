@@ -1,0 +1,39 @@
+name: 음력표 생성
+
+# 음력표는 이미 정해진 값이라 필요할 때만 수동으로 실행한다.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lunar-table
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: true  # 마지막 단계의 git push 에 필요
+
+      - name: KASI 음력표 받기
+        env:
+          KASI_API_KEY: ${{ secrets.KASI_API_KEY }}
+        run: python3 scripts/build_lunar_table.py
+
+      - name: 바뀌었으면 커밋
+        run: |
+          git add -A lunar/
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "음력표 생성 (한국천문연구원)"
+          git pull --rebase
+          git push
