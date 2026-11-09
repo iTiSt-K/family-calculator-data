@@ -43,6 +43,14 @@ def call(key: str, year: int, month: int) -> list[dict]:
             with urllib.request.urlopen(request, timeout=30) as response:
                 body = response.read().decode("utf-8")
             break
+        except urllib.error.HTTPError as error:
+            # 키 오류 등은 4xx + 설명 본문으로 온다(본문에 키 값은 없다).
+            detail = error.read().decode("utf-8", "replace")[:300]
+            if 400 <= error.code < 500:
+                raise SystemExit(f"API 거절 {error.code} {year}-{month:02d}: {detail}")
+            if attempt == 3:
+                raise SystemExit(f"요청 실패 {error.code} {year}-{month:02d}: {detail}")
+            time.sleep(2 * (attempt + 1))
         except urllib.error.URLError as error:  # 일시 오류는 잠깐 쉬고 다시
             if attempt == 3:
                 raise SystemExit(f"요청 실패 {year}-{month:02d}: {error.reason}")
@@ -161,6 +169,11 @@ def main() -> None:
     key = os.environ.get("KASI_API_KEY", "").strip()
     if not key:
         raise SystemExit("KASI_API_KEY 가 비어 있습니다.")
+    if "%" in key:
+        # 공공데이터포털의 Encoding 키가 들어온 경우 → Decoding 키로 되돌린다
+        # (아래에서 다시 인코딩하므로, 그대로 쓰면 두 번 인코딩돼 '미등록 키'가 된다).
+        key = urllib.parse.unquote(key)
+        print("Encoding 키가 등록돼 있어 Decoding 키로 바꿔 사용합니다.")
 
     last = find_last_year(key)
     print(f"KASI 제공 범위 확인: 양력 {FIRST_SOLAR_YEAR}~{last}년")
